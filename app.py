@@ -6,187 +6,272 @@ import bcrypt
 from datetime import datetime
 
 # --------------------
-# DATABASE - Configurare
+# DATABASE
 # --------------------
-# Folosim check_same_thread=False pentru a permite accesul multi-utilizator în Streamlit
+
 conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Creare tabele dacă nu există
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+username TEXT,
+password TEXT,
+role TEXT
 )
 """)
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS documents(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client TEXT,
-    doc_type TEXT,
-    month TEXT,
-    file_path TEXT,
-    upload_date TEXT
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+client TEXT,
+doc_type TEXT,
+year TEXT,
+month TEXT,
+file_path TEXT,
+upload_date TEXT
 )
 """)
+
 conn.commit()
 
 # --------------------
 # FOLDER DOCUMENTE
 # --------------------
+
 os.makedirs("documents", exist_ok=True)
 
 # --------------------
-# FUNCTII LOGICĂ
+# FUNCTII
 # --------------------
-def create_user(username, password, role):
-    try:
-        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-        cursor.execute(
-            "INSERT INTO users(username, password, role) VALUES (?,?,?)",
-            (username, hashed, role)
-        )
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
 
-def login(username, password):
-    cursor.execute("SELECT * FROM users WHERE username=?", (username,))
+def create_user(username,password,role):
+
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+
+    cursor.execute(
+        "INSERT INTO users(username,password,role) VALUES (?,?,?)",
+        (username,hashed,role)
+    )
+
+    conn.commit()
+
+
+def login(username,password):
+
+    cursor.execute("SELECT * FROM users WHERE username=?",(username,))
     user = cursor.fetchone()
+
     if user:
-        # Verificăm parola hashed
-        if bcrypt.checkpw(password.encode('utf-8'), user[2]):
+
+        if bcrypt.checkpw(password.encode(), user[2]):
             return user
+
     return None
 
+
 # --------------------
-# SESSION STATE (Starea Sesiunii)
+# SESSION
 # --------------------
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-    st.session_state.username = ""
-    st.session_state.role = ""
+
 
 # --------------------
-# INTERFAȚĂ: LOGIN / REGISTER
+# LOGIN / REGISTER
 # --------------------
+
 if not st.session_state.logged_in:
-    menu = st.sidebar.selectbox("Navigare", ["Login", "Register"])
+
+    menu = st.sidebar.selectbox("Menu",["Login","Register"])
 
     if menu == "Register":
-        st.title("📝 Creare cont nou")
-        new_user = st.text_input("Username dorit")
-        new_pass = st.text_input("Parolă", type="password")
-        new_role = st.selectbox("Alege Rolul", ["client", "contabil"])
 
-        if st.button("Înregistrare"):
-            if new_user and new_pass:
-                if create_user(new_user, new_pass, new_role):
-                    st.success("Cont creat cu succes! Mergi la Login.")
-                else:
-                    st.error("Acest username există deja.")
+        st.title("Creare cont")
+
+        username = st.text_input("Username")
+        password = st.text_input("Password",type="password")
+
+        role = st.selectbox("Rol",["client","contabil"])
+
+        if st.button("Register"):
+
+            if username and password:
+
+                create_user(username,password,role)
+
+                st.success("Cont creat. Poți face login.")
+
             else:
-                st.warning("Te rugăm să completezi toate câmpurile.")
+
+                st.error("Completează toate câmpurile")
+
 
     if menu == "Login":
-        st.title("🔐 Portal Documente - Login")
-        user_input = st.text_input("Username")
-        pass_input = st.text_input("Parolă", type="password")
 
-        if st.button("Autentificare"):
-            user_data = login(user_input, pass_input)
-            if user_data:
+        st.title("Login portal documente")
+
+        username = st.text_input("Username")
+        password = st.text_input("Password",type="password")
+
+        if st.button("Login"):
+
+            user = login(username,password)
+
+            if user:
+
                 st.session_state.logged_in = True
-                st.session_state.username = user_data[1]
-                st.session_state.role = user_data[3]
-                st.rerun()  # CORECTAT: funcția nouă înlocuiește experimental_rerun
+                st.session_state.username = user[1]
+                st.session_state.role = user[3]
+
+                st.rerun()
+
             else:
-                st.error("Username sau parolă incorectă.")
+
+                st.error("Login invalid")
+
 
 # --------------------
-# INTERFAȚĂ: APLICAȚIA PRINCIPALĂ
+# MAIN APP
 # --------------------
+
 else:
-    # Sidebar pentru Logout
-    st.sidebar.info(f"Utilizator: **{st.session_state.username}**")
-    st.sidebar.write(f"Rol: {st.session_state.role.capitalize()}")
-    
-    if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.username = ""
-        st.session_state.role = ""
-        st.rerun()  # CORECTAT
 
-    # --- LOGICĂ CLIENT ---
+    st.sidebar.write(
+        f"Logat ca: {st.session_state.username} ({st.session_state.role})"
+    )
+
+    if st.sidebar.button("Logout"):
+
+        st.session_state.logged_in = False
+        st.rerun()
+
+
+# --------------------
+# CLIENT PAGE
+# --------------------
+
     if st.session_state.role == "client":
-        st.title("📤 Încărcare Documente")
-        
-        doc_type = st.selectbox("Tip document", ["Factură", "Bon", "Extras bancar", "Altul"])
-        month = st.selectbox(
-            "Luna aferentă",
-            ["Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie", 
-             "Iulie", "August", "Septembrie", "Octombrie", "Noiembrie", "Decembrie"]
+
+        st.title("📤 Upload documente")
+
+        doc_type = st.selectbox(
+            "Tip document",
+            ["Factura","Bon","Extras bancar"]
         )
 
-        uploaded_file = st.file_uploader("Alege fișierul", type=["pdf", "png", "jpg", "jpeg"])
+        month = st.selectbox(
+            "Luna",
+            ["Ianuarie","Februarie","Martie","Aprilie","Mai",
+             "Iunie","Iulie","August","Septembrie","Octombrie",
+             "Noiembrie","Decembrie"]
+        )
 
-        if st.button("Trimite Document"):
-            if uploaded_file is not None:
-                # Creare structură foldere: documents/username/luna/
-                folder = os.path.join("documents", st.session_state.username, month)
-                os.makedirs(folder, exist_ok=True)
+        uploaded_file = st.file_uploader(
+            "Încarcă document",
+            type=["pdf","png","jpg"]
+        )
 
-                file_path = os.path.join(folder, uploaded_file.name)
+        if uploaded_file:
 
-                # Salvare fișier pe disk
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
+            year = datetime.now().year
 
-                # Salvare info în baza de date
-                cursor.execute(
-                    """INSERT INTO documents
-                    (client, doc_type, month, file_path, upload_date)
-                    VALUES (?,?,?,?,?)""",
-                    (st.session_state.username, doc_type, month, file_path, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            folder = os.path.join(
+                "documents",
+                st.session_state.username,
+                str(year),
+                month
+            )
+
+            os.makedirs(folder,exist_ok=True)
+
+            file_path = os.path.join(folder,uploaded_file.name)
+
+            with open(file_path,"wb") as f:
+                f.write(uploaded_file.getbuffer())
+
+            cursor.execute(
+                """INSERT INTO documents
+                (client,doc_type,year,month,file_path,upload_date)
+                VALUES (?,?,?,?,?,?)""",
+                (
+                    st.session_state.username,
+                    doc_type,
+                    str(year),
+                    month,
+                    file_path,
+                    str(datetime.now())
                 )
-                conn.commit()
-                st.success(f"Fișierul '{uploaded_file.name}' a fost trimis către contabil!")
-            else:
-                st.error("Te rugăm să selectezi un fișier mai întâi.")
+            )
 
-    # --- LOGICĂ CONTABIL ---
-    elif st.session_state.role == "contabil":
-        st.title("📊 Dashboard Contabilitate")
-        
-        # Citire date din DB
-        df = pd.read_sql("SELECT * FROM documents", conn)
+            conn.commit()
+
+            st.success("Document încărcat cu succes")
+
+
+# --------------------
+# CONTABIL DASHBOARD
+# --------------------
+
+    if st.session_state.role == "contabil":
+
+        st.title("📊 Dashboard contabil")
+
+        df = pd.read_sql("SELECT * FROM documents",conn)
 
         if not df.empty:
-            st.subheader("Filtrează documentele primite")
-            client_list = ["Toți"] + list(df["client"].unique())
-            selected_client = st.selectbox("Selectează Clientul", client_list)
-            
-            if selected_client != "Toți":
-                df = df[df["client"] == selected_client]
 
-            st.dataframe(df[["client", "doc_type", "month", "upload_date"]], use_container_width=True)
+            col1,col2,col3 = st.columns(3)
 
-            st.subheader("📥 Descărcare documente")
-            file_to_download = st.selectbox("Selectează fișierul pentru vizualizare", df["file_path"])
-            
-            if file_to_download:
-                try:
-                    with open(file_to_download, "rb") as f:
-                        btn = st.download_button(
-                            label="Download Fișier",
-                            data=f,
-                            file_name=os.path.basename(file_to_download)
+            col1.metric("Total documente",len(df))
+            col2.metric("Total clienți",df["client"].nunique())
+            col3.metric("Ani disponibili",df["year"].nunique())
+
+            st.divider()
+
+            clients = st.selectbox(
+                "Filtru client",
+                ["Toți"] + list(df["client"].unique())
+            )
+
+            if clients != "Toți":
+
+                df = df[df["client"] == clients]
+
+            st.dataframe(df)
+
+            st.divider()
+
+            st.subheader("Preview document")
+
+            file_to_open = st.selectbox(
+                "Selectează document",
+                df["file_path"]
+            )
+
+            if file_to_open:
+
+                if file_to_open.endswith(".pdf"):
+
+                    with open(file_to_open,"rb") as f:
+
+                        st.download_button(
+                            "Download document",
+                            f,
+                            file_name=os.path.basename(file_to_open)
                         )
-                except FileNotFoundError:
-                    st.error("Fișierul nu mai există pe server.")
+
+                        st.write("Preview PDF:")
+                        st.markdown(
+                            f'<iframe src="{file_to_open}" width="700" height="800"></iframe>',
+                            unsafe_allow_html=True
+                        )
+
+                else:
+
+                    st.image(file_to_open)
+
         else:
-            st.info("Momentan nu a fost încărcat niciun document.")
+
+            st.info("Nu există documente încă.")
